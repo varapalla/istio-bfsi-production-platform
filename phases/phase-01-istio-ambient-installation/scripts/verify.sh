@@ -14,9 +14,43 @@ echo "==> Kubernetes connectivity"
 kubectl cluster-info
 
 echo
+echo "==> Istio version"
+
+istioctl version
+
+echo
+echo "==> Istio precheck"
+
+istioctl x precheck
+
+echo
 echo "==> Istio Helm releases"
 
 helm list \
+  --namespace "${ISTIO_NAMESPACE}"
+
+echo
+echo "==> Istio Base"
+
+helm status istio-base \
+  --namespace "${ISTIO_NAMESPACE}"
+
+echo
+echo "==> Istiod"
+
+helm status istiod \
+  --namespace "${ISTIO_NAMESPACE}"
+
+echo
+echo "==> Istio CNI"
+
+helm status istio-cni \
+  --namespace "${ISTIO_NAMESPACE}"
+
+echo
+echo "==> Ztunnel"
+
+helm status ztunnel \
   --namespace "${ISTIO_NAMESPACE}"
 
 echo
@@ -39,41 +73,26 @@ kubectl get daemonsets \
   --namespace "${ISTIO_NAMESPACE}"
 
 echo
-echo "==> Istiod"
+echo "==> Istiod pods"
 
 kubectl get pods \
   --namespace "${ISTIO_NAMESPACE}" \
   -l app=istiod
 
 echo
-echo "==> Istio CNI"
+echo "==> Istio CNI pods"
 
 kubectl get pods \
   --namespace "${ISTIO_NAMESPACE}" \
   -l k8s-app=istio-cni-node
 
 echo
-echo "==> Ztunnel"
+echo "==> Ztunnel pods"
 
 kubectl get pods \
   --namespace "${ISTIO_NAMESPACE}" \
   -l app=ztunnel \
   -o wide
-
-echo
-echo "==> Istio version"
-
-istioctl version
-
-echo
-echo "==> Istio precheck"
-
-istioctl x precheck
-
-echo
-echo "==> Istio installation verification"
-
-istioctl verify-install
 
 echo
 echo "==> Ztunnel workloads"
