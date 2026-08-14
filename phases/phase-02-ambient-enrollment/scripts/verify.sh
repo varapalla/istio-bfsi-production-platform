@@ -60,11 +60,25 @@ for namespace in "${NAMESPACES[@]}"; do
 done
 
 # --------------------------------------------------
+# Namespace summary
+# --------------------------------------------------
+
+echo
+echo "==> Ambient namespaces"
+
+kubectl get namespace \
+  payments \
+  orders \
+  cart \
+  customers \
+  --show-labels
+
+# --------------------------------------------------
 # Ztunnel verification
 # --------------------------------------------------
 
 echo
-echo "==> Verifying Ztunnel"
+echo "==> Verifying Ztunnel DaemonSet"
 
 kubectl get daemonset \
   -n "${ISTIO_NAMESPACE}" \
@@ -79,7 +93,34 @@ kubectl get pods \
   -o wide
 
 # --------------------------------------------------
-# Ztunnel workload configuration
+# Ztunnel readiness
+# --------------------------------------------------
+
+echo
+echo "==> Checking Ztunnel readiness"
+
+DESIRED="$(
+  kubectl get daemonset ztunnel \
+    -n "${ISTIO_NAMESPACE}" \
+    -o jsonpath='{.status.desiredNumberScheduled}'
+)"
+
+READY="$(
+  kubectl get daemonset ztunnel \
+    -n "${ISTIO_NAMESPACE}" \
+    -o jsonpath='{.status.numberReady}'
+)"
+
+echo "Desired Ztunnel Pods : ${DESIRED}"
+echo "Ready Ztunnel Pods   : ${READY}"
+
+if [[ "${DESIRED}" != "${READY}" ]]; then
+  echo "ERROR: Not all Ztunnel Pods are ready."
+  exit 1
+fi
+
+# --------------------------------------------------
+# Ambient workload configuration
 # --------------------------------------------------
 
 echo
@@ -88,7 +129,7 @@ echo "==> Ztunnel Ambient workloads"
 istioctl ztunnel-config workload
 
 # --------------------------------------------------
-# Application workload verification
+# Application workload status
 # --------------------------------------------------
 
 for namespace in "${NAMESPACES[@]}"; do
@@ -103,12 +144,6 @@ for namespace in "${NAMESPACES[@]}"; do
     kubectl get pods \
       -n "${namespace}" \
       -o wide
-
-    if istioctl ztunnel-config workload | grep -q "${namespace}"; then
-      echo "Ztunnel workload detected: ${namespace}"
-    else
-      echo "WARNING: Workloads exist but are not currently detected by Ztunnel."
-    fi
 
   else
 
