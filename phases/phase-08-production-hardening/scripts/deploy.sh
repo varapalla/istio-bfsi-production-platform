@@ -24,6 +24,10 @@ error() {
   exit 1
 }
 
+# ------------------------------------------------------------
+# Prerequisites
+# ------------------------------------------------------------
+
 command -v kubectl >/dev/null 2>&1 || \
   error "kubectl is not installed"
 
@@ -31,7 +35,7 @@ kubectl cluster-info >/dev/null 2>&1 || \
   error "Unable to connect to Kubernetes cluster"
 
 # ------------------------------------------------------------
-# Prerequisites
+# Verify required namespaces
 # ------------------------------------------------------------
 
 log "Verifying required namespaces"
@@ -55,6 +59,10 @@ log "Deploying AuthorizationPolicy"
 
 kubectl apply \
   -f "${SECURITY_DIR}/authorization-policy.yaml"
+
+# ------------------------------------------------------------
+# Request Authentication
+# ------------------------------------------------------------
 
 if [[ -n "${JWT_ISSUER}" ]]; then
 
@@ -117,13 +125,17 @@ kubectl apply \
 # Pod Security Admission
 # ------------------------------------------------------------
 
-log "Applying Pod Security Admission labels"
+log "Applying Pod Security Admission audit/warn labels"
 
 kubectl label namespace "${PAYMENTS_NAMESPACE}" \
-  pod-security.kubernetes.io/enforce=restricted \
   pod-security.kubernetes.io/audit=restricted \
   pod-security.kubernetes.io/warn=restricted \
   --overwrite
+
+# Ensure enforcement is not enabled by this phase.
+kubectl label namespace "${PAYMENTS_NAMESPACE}" \
+  pod-security.kubernetes.io/enforce- \
+  >/dev/null 2>&1 || true
 
 # ------------------------------------------------------------
 # Summary
@@ -139,11 +151,16 @@ kubectl get peerauthentication \
 kubectl get authorizationpolicy \
   -n "${PAYMENTS_NAMESPACE}"
 
+kubectl get requestauthentication \
+  -n "${PAYMENTS_NAMESPACE}" \
+  --ignore-not-found
+
 echo
 
 log "Resilience"
 
-kubectl get priorityclass bfsi-critical
+kubectl get priorityclass \
+  bfsi-critical
 
 kubectl get pdb \
   -A
@@ -157,6 +174,14 @@ kubectl get resourcequota \
 
 kubectl get limitrange \
   -n "${PAYMENTS_NAMESPACE}"
+
+echo
+
+log "Pod Security"
+
+kubectl get namespace \
+  "${PAYMENTS_NAMESPACE}" \
+  --show-labels
 
 echo
 

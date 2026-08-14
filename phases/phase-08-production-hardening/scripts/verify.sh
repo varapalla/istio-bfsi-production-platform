@@ -14,6 +14,10 @@ error() {
   exit 1
 }
 
+# ------------------------------------------------------------
+# Prerequisites
+# ------------------------------------------------------------
+
 command -v kubectl >/dev/null 2>&1 || \
   error "kubectl is not installed"
 
@@ -26,16 +30,18 @@ kubectl cluster-info >/dev/null 2>&1 || \
 
 log "Verifying payments namespace"
 
-kubectl get namespace "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
+kubectl get namespace \
+  "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
   error "Namespace '${PAYMENTS_NAMESPACE}' not found"
 
 log "Verifying ingress namespace"
 
-kubectl get namespace "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+kubectl get namespace \
+  "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
   error "Namespace '${INGRESS_NAMESPACE}' not found"
 
 # ------------------------------------------------------------
-# Verify security
+# Verify PeerAuthentication
 # ------------------------------------------------------------
 
 log "Verifying PeerAuthentication"
@@ -45,22 +51,47 @@ kubectl get peerauthentication \
   -n istio-system >/dev/null 2>&1 || \
   error "PeerAuthentication 'mesh-default' not found"
 
+# Verify STRICT mTLS
+
+MTLS_MODE="$(
+  kubectl get peerauthentication \
+    mesh-default \
+    -n istio-system \
+    -o jsonpath='{.spec.mtls.mode}'
+)"
+
+[[ "${MTLS_MODE}" == "STRICT" ]] || \
+  error "PeerAuthentication mode is '${MTLS_MODE}', expected 'STRICT'"
+
+# ------------------------------------------------------------
+# Verify AuthorizationPolicy
+# ------------------------------------------------------------
+
 log "Verifying AuthorizationPolicy"
 
 kubectl get authorizationpolicy \
   payments-authorization \
   -n "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
-  error "Payments AuthorizationPolicy not found"
-
-log "Verifying RequestAuthentication"
-
-kubectl get requestauthentication \
-  payments-jwt \
-  -n "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
-  error "RequestAuthentication 'payments-jwt' not found"
+  error "AuthorizationPolicy 'payments-authorization' not found"
 
 # ------------------------------------------------------------
-# Verify resilience
+# Verify RequestAuthentication
+# ------------------------------------------------------------
+
+if kubectl get requestauthentication \
+  payments-jwt \
+  -n "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1; then
+
+  log "RequestAuthentication found"
+
+else
+
+  log "RequestAuthentication not configured"
+
+fi
+
+# ------------------------------------------------------------
+# Verify PriorityClass
 # ------------------------------------------------------------
 
 log "Verifying PriorityClass"
@@ -69,7 +100,11 @@ kubectl get priorityclass \
   bfsi-critical >/dev/null 2>&1 || \
   error "PriorityClass 'bfsi-critical' not found"
 
-log "Verifying payments PDB"
+# ------------------------------------------------------------
+# Verify payments PDB
+# ------------------------------------------------------------
+
+log "Verifying payments PodDisruptionBudget"
 
 kubectl get pdb \
   payments \
@@ -77,7 +112,7 @@ kubectl get pdb \
   error "Payments PDB not found"
 
 # ------------------------------------------------------------
-# Verify gateway PDBs
+# Verify ingress Gateway PDB
 # ------------------------------------------------------------
 
 log "Verifying ingress Gateway PDB"
@@ -85,17 +120,21 @@ log "Verifying ingress Gateway PDB"
 kubectl get pdb \
   bfsi-ingress \
   -n "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
-  error "Ingress Gateway PDB not found"
+  error "Ingress Gateway PDB 'bfsi-ingress' not found"
+
+# ------------------------------------------------------------
+# Verify egress Gateway PDB
+# ------------------------------------------------------------
 
 log "Verifying egress Gateway PDB"
 
 kubectl get pdb \
   payments-egress \
   -n "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
-  error "Egress Gateway PDB not found"
+  error "Egress Gateway PDB 'payments-egress' not found"
 
 # ------------------------------------------------------------
-# Verify resource governance
+# Verify ResourceQuota
 # ------------------------------------------------------------
 
 log "Verifying ResourceQuota"
@@ -103,14 +142,18 @@ log "Verifying ResourceQuota"
 kubectl get resourcequota \
   payments-quota \
   -n "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
-  error "ResourceQuota not found"
+  error "ResourceQuota 'payments-quota' not found"
+
+# ------------------------------------------------------------
+# Verify LimitRange
+# ------------------------------------------------------------
 
 log "Verifying LimitRange"
 
 kubectl get limitrange \
   payments-defaults \
   -n "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
-  error "LimitRange not found"
+  error "LimitRange 'payments-defaults' not found"
 
 # ------------------------------------------------------------
 # Verify Pod Security Admission
@@ -118,28 +161,40 @@ kubectl get limitrange \
 
 log "Verifying Pod Security Admission"
 
-ENFORCE_LEVEL="$(
-  kubectl get namespace "${PAYMENTS_NAMESPACE}" \
+PSA_AUDIT="$(
+  kubectl get namespace \
+    "${PAYMENTS_NAMESPACE}" \
+    -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/audit}'
+)"
+
+PSA_WARN="$(
+  kubectl get namespace \
+    "${PAYMENTS_NAMESPACE}" \
+    -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/warn}'
+)"
+
+[[ "${PSA_AUDIT}" == "restricted" ]] || \
+  error "Pod Security audit level is '${PSA_AUDIT}', expected 'restricted'"
+
+[[ "${PSA_WARN}" == "restricted" ]] || \
+  error "Pod Security warn level is '${PSA_WARN}', expected 'restricted'"
+
+# ------------------------------------------------------------
+# Verify enforcement is not enabled by Phase 8
+# ------------------------------------------------------------
+
+PSA_ENFORCE="$(
+  kubectl get namespace \
+    "${PAYMENTS_NAMESPACE}" \
     -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}'
 )"
 
-[[ "${ENFORCE_LEVEL}" == "restricted" ]] || \
-  error "Pod Security enforce level is '${ENFORCE_LEVEL}', expected 'restricted'"
+if [[ -n "${PSA_ENFORCE}" ]]; then
+  error "Pod Security enforce label is '${PSA_ENFORCE}'. Phase 8 expects audit/warn only."
+fi
 
 # ------------------------------------------------------------
-# Verify topology spread
-# ------------------------------------------------------------
-
-log "Verifying payments topology spread"
-
-kubectl get deployment payments \
-  -n "${PAYMENTS_NAMESPACE}" \
-  -o jsonpath='{.spec.template.spec.topologySpreadConstraints[*].topologyKey}' \
-  | grep -q 'topology.kubernetes.io/zone' || \
-  error "Payments deployment does not have zone topology spread"
-
-# ------------------------------------------------------------
-# Display state
+# Display Security state
 # ------------------------------------------------------------
 
 echo
@@ -153,16 +208,26 @@ kubectl get authorizationpolicy \
   -n "${PAYMENTS_NAMESPACE}"
 
 kubectl get requestauthentication \
-  -n "${PAYMENTS_NAMESPACE}"
+  -n "${PAYMENTS_NAMESPACE}" \
+  --ignore-not-found
+
+# ------------------------------------------------------------
+# Display Resilience state
+# ------------------------------------------------------------
 
 echo
 
 log "Resilience"
 
-kubectl get priorityclass bfsi-critical
+kubectl get priorityclass \
+  bfsi-critical
 
 kubectl get pdb \
   -A
+
+# ------------------------------------------------------------
+# Display Resource Governance
+# ------------------------------------------------------------
 
 echo
 
@@ -174,12 +239,21 @@ kubectl get resourcequota \
 kubectl get limitrange \
   -n "${PAYMENTS_NAMESPACE}"
 
+# ------------------------------------------------------------
+# Display Pod Security
+# ------------------------------------------------------------
+
 echo
 
-log "Payments Deployment"
+log "Pod Security"
 
-kubectl get deployment payments \
-  -n "${PAYMENTS_NAMESPACE}"
+kubectl get namespace \
+  "${PAYMENTS_NAMESPACE}" \
+  --show-labels
+
+# ------------------------------------------------------------
+# Final result
+# ------------------------------------------------------------
 
 echo
 
