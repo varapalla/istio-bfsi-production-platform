@@ -42,12 +42,6 @@ kubectl get namespace "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
 kubectl get namespace "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
   error "Namespace '${INGRESS_NAMESPACE}' not found"
 
-log "Verifying payments workload"
-
-kubectl get deployment payments \
-  -n "${PAYMENTS_NAMESPACE}" >/dev/null 2>&1 || \
-  error "Deployment 'payments' not found"
-
 # ------------------------------------------------------------
 # Security
 # ------------------------------------------------------------
@@ -62,15 +56,20 @@ log "Deploying AuthorizationPolicy"
 kubectl apply \
   -f "${SECURITY_DIR}/authorization-policy.yaml"
 
-if [[ -z "${JWT_ISSUER}" ]]; then
-  error "JWT_ISSUER must be set before deploying RequestAuthentication"
+if [[ -n "${JWT_ISSUER}" ]]; then
+
+  log "Deploying RequestAuthentication"
+
+  sed "s|\${JWT_ISSUER}|${JWT_ISSUER}|g" \
+    "${SECURITY_DIR}/request-authentication.yaml" |
+    kubectl apply -f -
+
+else
+
+  log "JWT_ISSUER not provided"
+  log "Skipping RequestAuthentication"
+
 fi
-
-log "Deploying RequestAuthentication"
-
-envsubst '${JWT_ISSUER}' \
-  < "${SECURITY_DIR}/request-authentication.yaml" \
-  | kubectl apply -f -
 
 # ------------------------------------------------------------
 # Resilience
@@ -85,13 +84,6 @@ log "Deploying payments PodDisruptionBudget"
 
 kubectl apply \
   -f "${RESILIENCE_DIR}/pod-disruption-budget.yaml"
-
-log "Applying payments topology spread constraints"
-
-kubectl patch deployment payments \
-  -n "${PAYMENTS_NAMESPACE}" \
-  --type=strategic \
-  --patch-file "${RESILIENCE_DIR}/topology-spread.yaml"
 
 # ------------------------------------------------------------
 # Gateway resilience
@@ -108,7 +100,7 @@ kubectl apply \
   -f "${GATEWAYS_DIR}/egress-pdb.yaml"
 
 # ------------------------------------------------------------
-# Namespace resource governance
+# Resource governance
 # ------------------------------------------------------------
 
 log "Deploying ResourceQuota"
@@ -139,7 +131,7 @@ kubectl label namespace "${PAYMENTS_NAMESPACE}" \
 
 echo
 
-log "Security resources"
+log "Security"
 
 kubectl get peerauthentication \
   -n istio-system
@@ -147,31 +139,18 @@ kubectl get peerauthentication \
 kubectl get authorizationpolicy \
   -n "${PAYMENTS_NAMESPACE}"
 
-kubectl get requestauthentication \
-  -n "${PAYMENTS_NAMESPACE}"
-
 echo
 
-log "Resilience resources"
+log "Resilience"
 
 kubectl get priorityclass bfsi-critical
 
 kubectl get pdb \
-  -n "${PAYMENTS_NAMESPACE}"
+  -A
 
 echo
 
-log "Gateway PDBs"
-
-kubectl get pdb \
-  -n "${INGRESS_NAMESPACE}"
-
-kubectl get pdb \
-  -n "${PAYMENTS_NAMESPACE}"
-
-echo
-
-log "Namespace policies"
+log "Resource Governance"
 
 kubectl get resourcequota \
   -n "${PAYMENTS_NAMESPACE}"
