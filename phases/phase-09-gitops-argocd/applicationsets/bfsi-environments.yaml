@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: bfsi-environments
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: istio-bfsi-production-platform
+    app.kubernetes.io/component: gitops
+spec:
+  goTemplate: true
+
+  generators:
+    - git:
+        repoURL: https://github.com/varapalla/istio-bfsi-production-platform.git
+        revision: main
+        directories:
+          - path: environments/*
+
+  template:
+    metadata:
+      name: "bfsi-{{.path.basename}}"
+      labels:
+        app.kubernetes.io/part-of: istio-bfsi-production-platform
+        app.kubernetes.io/component: environment
+
+    spec:
+      project: bfsi-platform
+
+      source:
+        repoURL: https://github.com/varapalla/istio-bfsi-production-platform.git
+        targetRevision: main
+        path: "{{.path.path}}"
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{.path.basename}}"
+
+      syncPolicy:
+        automated:
+          selfHeal: true
+          prune: false
