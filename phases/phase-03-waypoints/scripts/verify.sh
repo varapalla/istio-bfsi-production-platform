@@ -2,8 +2,6 @@
 
 set -euo pipefail
 
-ISTIO_NAMESPACE="${ISTIO_NAMESPACE:-istio-system}"
-
 WAYPOINTS=(
   "payments:payments-waypoint"
   "orders:orders-waypoint"
@@ -28,7 +26,7 @@ command -v istioctl >/dev/null 2>&1 || {
 kubectl cluster-info >/dev/null
 
 # --------------------------------------------------
-# Gateway API verification
+# Gateway API
 # --------------------------------------------------
 
 echo
@@ -38,11 +36,17 @@ kubectl get crd \
   gateways.gateway.networking.k8s.io
 
 # --------------------------------------------------
-# Namespace verification
+# GatewayClass
 # --------------------------------------------------
 
 echo
-echo "==> Verifying Ambient namespaces"
+echo "==> Istio Waypoint GatewayClass"
+
+kubectl get gatewayclass istio-waypoint
+
+# --------------------------------------------------
+# Namespace and waypoint verification
+# --------------------------------------------------
 
 for entry in "${WAYPOINTS[@]}"; do
 
@@ -50,62 +54,37 @@ for entry in "${WAYPOINTS[@]}"; do
   waypoint="${entry##*:}"
 
   echo
-  echo "Checking namespace: ${namespace}"
+  echo "==> Checking ${namespace}"
+  echo "    Waypoint: ${waypoint}"
 
-  if ! kubectl get namespace "${namespace}" >/dev/null 2>&1; then
-    echo "ERROR: Namespace ${namespace} does not exist."
-    exit 1
-  fi
+  # Namespace
+  kubectl get namespace "${namespace}" >/dev/null
 
-  mode="$(
+  # Ambient enrollment
+  ambient_mode="$(
     kubectl get namespace "${namespace}" \
       -o jsonpath='{.metadata.labels.istio\.io/dataplane-mode}'
   )"
 
-  if [[ "${mode}" != "ambient" ]]; then
+  if [[ "${ambient_mode}" != "ambient" ]]; then
     echo "ERROR: ${namespace} is not enrolled in Ambient Mode."
     exit 1
   fi
 
+  # Waypoint enrollment
   configured_waypoint="$(
     kubectl get namespace "${namespace}" \
       -o jsonpath='{.metadata.labels.istio\.io/use-waypoint}'
   )"
 
   if [[ "${configured_waypoint}" != "${waypoint}" ]]; then
-    echo "ERROR: ${namespace} is not configured to use ${waypoint}."
-    echo "Current waypoint: ${configured_waypoint:-not-set}"
+    echo "ERROR: Incorrect waypoint configured for ${namespace}."
+    echo "Expected: ${waypoint}"
+    echo "Actual:   ${configured_waypoint:-not-set}"
     exit 1
   fi
 
-  echo "Ambient Mode : enabled"
-  echo "Waypoint      : ${waypoint}"
-
-done
-
-# --------------------------------------------------
-# Waypoint Gateway verification
-# --------------------------------------------------
-
-echo
-echo "==> Verifying Waypoint Gateways"
-
-for entry in "${WAYPOINTS[@]}"; do
-
-  namespace="${entry%%:*}"
-  waypoint="${entry##*:}"
-
-  echo
-  echo "Checking: ${waypoint} in ${namespace}"
-
-  if ! kubectl get gateway \
-      "${waypoint}" \
-      -n "${namespace}" >/dev/null 2>&1; then
-
-    echo "ERROR: Waypoint ${waypoint} does not exist."
-    exit 1
-  fi
-
+  # Gateway
   kubectl get gateway \
     "${waypoint}" \
     -n "${namespace}"
@@ -113,11 +92,11 @@ for entry in "${WAYPOINTS[@]}"; do
 done
 
 # --------------------------------------------------
-# Waypoint status
+# Gateway status
 # --------------------------------------------------
 
 echo
-echo "==> Waypoint Gateway status"
+echo "==> Waypoint Gateways"
 
 kubectl get gateway -A
 
@@ -126,19 +105,10 @@ kubectl get gateway -A
 # --------------------------------------------------
 
 echo
-echo "==> Waypoint deployments"
+echo "==> Waypoint Deployments"
 
-for entry in "${WAYPOINTS[@]}"; do
-
-  namespace="${entry%%:*}"
-
-  echo
-  echo "Namespace: ${namespace}"
-
-  kubectl get deployment \
-    -n "${namespace}"
-
-done
+kubectl get deployment -A \
+  -l gateway.istio.io/managed=istio.io-mesh-controller
 
 # --------------------------------------------------
 # Waypoint Pods
@@ -147,33 +117,18 @@ done
 echo
 echo "==> Waypoint Pods"
 
-kubectl get pods \
-  -A \
+kubectl get pods -A \
   -l gateway.istio.io/managed=istio.io-mesh-controller \
   -o wide
 
 # --------------------------------------------------
-# Waypoint list
+# Istio waypoint status
 # --------------------------------------------------
 
 echo
 echo "==> Istio Waypoints"
 
-istioctl waypoint list --all
-
-# --------------------------------------------------
-# Final namespace state
-# --------------------------------------------------
-
-echo
-echo "==> Namespace labels"
-
-kubectl get namespace \
-  payments \
-  orders \
-  cart \
-  customers \
-  --show-labels
+istioctl waypoint list -A
 
 echo
 echo "=========================================="
