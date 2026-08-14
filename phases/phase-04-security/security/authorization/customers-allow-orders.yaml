@@ -1,0 +1,16 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: customers-allow-orders
+  namespace: customers
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: customers-waypoint
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - orders
