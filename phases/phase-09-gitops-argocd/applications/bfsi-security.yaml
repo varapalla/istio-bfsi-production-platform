@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bfsi-security
+  namespace: argocd
+spec:
+  project: bfsi-platform
+
+  source:
+    repoURL: https://github.com/varapalla/istio-bfsi-production-platform.git
+    targetRevision: main
+    path: phases/phase-04-security-mtls-authorization
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: false
+
+    syncOptions:
+      - CreateNamespace=true

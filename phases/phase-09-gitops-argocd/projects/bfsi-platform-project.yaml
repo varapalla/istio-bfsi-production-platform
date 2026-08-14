@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: bfsi-platform
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: istio-bfsi-production-platform
+    app.kubernetes.io/component: gitops
+spec:
+  description: BFSI Istio Ambient production platform
+
+  sourceRepos:
+    - https://github.com/varapalla/istio-bfsi-production-platform.git
+
+  destinations:
+    - namespace: istio-system
+      server: https://kubernetes.default.svc
+
+    - namespace: istio-ingress
+      server: https://kubernetes.default.svc
+
+    - namespace: payments
+      server: https://kubernetes.default.svc
+
+    - namespace: orders
+      server: https://kubernetes.default.svc
+
+    - namespace: cart
+      server: https://kubernetes.default.svc
+
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
