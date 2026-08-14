@@ -14,6 +14,10 @@ error() {
   exit 1
 }
 
+# ------------------------------------------------------------
+# Prerequisites
+# ------------------------------------------------------------
+
 command -v helm >/dev/null 2>&1 || \
   error "helm is not installed"
 
@@ -45,6 +49,16 @@ helm status \
   error "Argo CD Helm release not found"
 
 helm status \
+  "${ARGOCD_RELEASE}" \
+  -n "${ARGOCD_NAMESPACE}"
+
+# ------------------------------------------------------------
+# Helm values
+# ------------------------------------------------------------
+
+log "Verifying Helm release values"
+
+helm get values \
   "${ARGOCD_RELEASE}" \
   -n "${ARGOCD_NAMESPACE}"
 
@@ -88,7 +102,7 @@ kubectl rollout status \
   --timeout=60s
 
 # ------------------------------------------------------------
-# Argo CD CRDs
+# CRDs
 # ------------------------------------------------------------
 
 log "Verifying Argo CD CRDs"
@@ -98,9 +112,32 @@ for crd in \
   applicationsets.argoproj.io \
   appprojects.argoproj.io
 do
+
   kubectl get crd "${crd}" >/dev/null 2>&1 || \
     error "Argo CD CRD '${crd}' not found"
+
 done
+
+# ------------------------------------------------------------
+# RBAC
+# ------------------------------------------------------------
+
+log "Verifying Helm-managed Argo CD RBAC"
+
+kubectl get configmap \
+  argocd-rbac-cm \
+  -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1 || \
+  error "argocd-rbac-cm not found"
+
+RBAC_POLICY="$(
+  kubectl get configmap \
+    argocd-rbac-cm \
+    -n "${ARGOCD_NAMESPACE}" \
+    -o jsonpath='{.data.policy\.default}'
+)"
+
+[[ "${RBAC_POLICY}" == "role:readonly" ]] || \
+  error "Unexpected default RBAC policy: ${RBAC_POLICY}"
 
 # ------------------------------------------------------------
 # AppProject
@@ -155,15 +192,20 @@ kubectl get applicationsets \
   -n "${ARGOCD_NAMESPACE}"
 
 # ------------------------------------------------------------
-# RBAC
+# Repository
 # ------------------------------------------------------------
 
-log "Verifying Argo CD RBAC"
+if kubectl get secret \
+  bfsi-platform-repository \
+  -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
 
-kubectl get configmap \
-  argocd-rbac-cm \
-  -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1 || \
-  error "argocd-rbac-cm not found"
+  log "Git repository credential Secret found"
+
+else
+
+  log "Git repository credential Secret not configured"
+
+fi
 
 # ------------------------------------------------------------
 # Services

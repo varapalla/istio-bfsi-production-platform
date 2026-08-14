@@ -5,14 +5,15 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PHASE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
+ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
+ARGOCD_RELEASE="${ARGOCD_RELEASE:-argocd}"
+ARGOCD_CHART="${ARGOCD_CHART:-argo/argo-cd}"
+ARGOCD_CHART_VERSION="${ARGOCD_CHART_VERSION:-}"
+
 ARGOCD_DIR="${PHASE_DIR}/argocd"
 PROJECTS_DIR="${PHASE_DIR}/projects"
 APPLICATIONS_DIR="${PHASE_DIR}/applications"
 APPLICATIONSETS_DIR="${PHASE_DIR}/applicationsets"
-POLICIES_DIR="${PHASE_DIR}/policies"
-
-ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
-ARGOCD_RELEASE="${ARGOCD_RELEASE:-argocd}"
 
 log() {
   echo "==> $*"
@@ -22,6 +23,10 @@ error() {
   echo "ERROR: $*" >&2
   exit 1
 }
+
+# ------------------------------------------------------------
+# Prerequisites
+# ------------------------------------------------------------
 
 command -v helm >/dev/null 2>&1 || \
   error "helm is not installed"
@@ -36,7 +41,7 @@ kubectl cluster-info >/dev/null 2>&1 || \
   error "Argo CD values.yaml not found"
 
 # ------------------------------------------------------------
-# Argo CD Helm repository
+# Helm repository
 # ------------------------------------------------------------
 
 log "Adding Argo Helm repository"
@@ -58,20 +63,54 @@ kubectl create namespace "${ARGOCD_NAMESPACE}" \
   -o yaml | kubectl apply -f -
 
 # ------------------------------------------------------------
-# Argo CD
+# Remove legacy kubectl-managed RBAC ConfigMap
+# ------------------------------------------------------------
+
+if kubectl get configmap \
+  argocd-rbac-cm \
+  -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
+
+  log "Removing legacy kubectl-managed argocd-rbac-cm"
+
+  kubectl delete configmap \
+    argocd-rbac-cm \
+    -n "${ARGOCD_NAMESPACE}"
+
+fi
+
+# ------------------------------------------------------------
+# Argo CD installation
 # ------------------------------------------------------------
 
 log "Installing Argo CD using Helm"
 
-helm upgrade --install "${ARGOCD_RELEASE}" \
-  argo/argo-cd \
-  --namespace "${ARGOCD_NAMESPACE}" \
-  --values "${ARGOCD_DIR}/values.yaml" \
-  --wait \
-  --timeout 10m
+HELM_ARGS=(
+  upgrade
+  --install
+  "${ARGOCD_RELEASE}"
+  "${ARGOCD_CHART}"
+  --namespace
+  "${ARGOCD_NAMESPACE}"
+  --values
+  "${ARGOCD_DIR}/values.yaml"
+  --wait
+  --timeout
+  10m
+)
+
+if [[ -n "${ARGOCD_CHART_VERSION}" ]]; then
+
+  HELM_ARGS+=(
+    --version
+    "${ARGOCD_CHART_VERSION}"
+  )
+
+fi
+
+helm "${HELM_ARGS[@]}"
 
 # ------------------------------------------------------------
-# Wait for components
+# Wait for Argo CD components
 # ------------------------------------------------------------
 
 log "Waiting for Argo CD server"
@@ -96,7 +135,18 @@ kubectl rollout status \
   --timeout=10m
 
 # ------------------------------------------------------------
-# Argo CD project
+# Verify Helm-managed RBAC
+# ------------------------------------------------------------
+
+log "Verifying Helm-managed Argo CD RBAC"
+
+kubectl get configmap \
+  argocd-rbac-cm \
+  -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Helm-managed argocd-rbac-cm was not created"
+
+# ------------------------------------------------------------
+# BFSI AppProject
 # ------------------------------------------------------------
 
 log "Deploying BFSI AppProject"
@@ -105,13 +155,38 @@ kubectl apply \
   -f "${PROJECTS_DIR}/bfsi-platform-project.yaml"
 
 # ------------------------------------------------------------
-# RBAC
+# Repository credentials
 # ------------------------------------------------------------
 
-log "Deploying Argo CD RBAC"
+if [[ -n "${GITHUB_USERNAME:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
 
-kubectl apply \
-  -f "${POLICIES_DIR}/argocd-rbac-cm.yaml"
+  log "Configuring Git repository credentials"
+
+  kubectl create secret generic \
+    bfsi-platform-repository \
+    -n "${ARGOCD_NAMESPACE}" \
+    --from-literal=type=git \
+    --from-literal=name=bfsi-platform-repository \
+    --from-literal=project=bfsi-platform \
+    --from-literal=url=https://github.com/varapalla/istio-bfsi-production-platform.git \
+    --from-literal=username="${GITHUB_USERNAME}" \
+    --from-literal=password="${GITHUB_TOKEN}" \
+    --dry-run=client \
+    -o yaml |
+    kubectl apply -f -
+
+  kubectl label secret \
+    bfsi-platform-repository \
+    -n "${ARGOCD_NAMESPACE}" \
+    argocd.argoproj.io/secret-type=repository \
+    --overwrite
+
+else
+
+  log "GitHub credentials not provided"
+  log "Skipping repository credential configuration"
+
+fi
 
 # ------------------------------------------------------------
 # Applications
@@ -152,7 +227,7 @@ kubectl apply \
 
 echo
 
-log "Helm release"
+log "Argo CD Helm release"
 
 helm list \
   -n "${ARGOCD_NAMESPACE}"

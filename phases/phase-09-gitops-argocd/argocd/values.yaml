@@ -7,6 +7,19 @@ configs:
     users.anonymous.enabled: "false"
     exec.enabled: "false"
 
+  rbac:
+    create: true
+
+    policy.default: role:readonly
+
+    policy.csv: |
+      p, role:platform-admin, applications, *, */*, allow
+      p, role:platform-admin, projects, get, *, allow
+      p, role:platform-admin, repositories, get, *, allow
+      p, role:platform-admin, clusters, get, *, allow
+
+      g, argocd-admins, role:platform-admin
+
 server:
   replicas: 2
 
