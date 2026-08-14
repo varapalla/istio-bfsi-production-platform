@@ -1,8 +1,8 @@
 # Phase 1 — Production Istio Ambient Installation with Helm
 
-This phase installs the Istio Ambient data plane using Helm.
+This phase installs **Istio Ambient Mode** on the Kubernetes cluster using Helm.
 
-## Components
+The installation consists of four primary components:
 
 ```text
 Istio Base
@@ -10,18 +10,25 @@ Istio Base
     ▼
 Istiod
     │
-    ▼
-Istio CNI
+    ├── Istio CNI
     │
-    ▼
-Ztunnel
+    └── Ztunnel
 ```
 
-Istio recommends Helm for production Ambient installations because the control-plane and data-plane components are installed and upgraded separately.
+## Components
+
+| Component    | Purpose                                |
+| ------------ | -------------------------------------- |
+| `istio/base` | Installs Istio CRDs and base resources |
+| `istiod`     | Istio control plane                    |
+| `istio/cni`  | Configures Ambient traffic redirection |
+| `ztunnel`    | Ambient Layer 4 zero-trust proxy       |
 
 ---
 
-## 1.1 Set Istio Version
+# 1.1 Set Istio Version
+
+Use the same Istio version validated during Phase 0.
 
 ```bash
 export ISTIO_VERSION=1.30.3
@@ -33,29 +40,65 @@ Verify:
 echo ${ISTIO_VERSION}
 ```
 
+Expected:
+
+```text
+1.30.3
+```
+
 ---
 
-## 1.2 Add Istio Helm Repository
+# 1.2 Verify Helm Repository
+
+Check the Istio repository:
+
+```bash
+helm repo list
+```
+
+If it does not exist:
 
 ```bash
 helm repo add istio \
   https://istio-release.storage.googleapis.com/charts
+```
 
+Update the repository:
+
+```bash
 helm repo update
 ```
 
-Verify:
+Verify the available charts:
 
 ```bash
 helm search repo istio
 ```
 
+Expected charts:
+
+```text
+istio/base
+istio/istiod
+istio/cni
+istio/ztunnel
+istio/gateway
+```
+
 ---
 
-## 1.3 Create Istio Namespace
+# 1.3 Create Istio Namespace
+
+Create the Istio system namespace:
 
 ```bash
 kubectl create namespace istio-system
+```
+
+If the namespace already exists:
+
+```bash
+kubectl get namespace istio-system
 ```
 
 Verify:
@@ -68,7 +111,7 @@ kubectl get namespace istio-system
 
 # 1.4 Install Istio Base
 
-The `base` chart installs Istio CRDs and the cluster-scoped resources required by Istio.
+Install the Istio base chart:
 
 ```bash
 helm upgrade --install istio-base istio/base \
@@ -77,16 +120,23 @@ helm upgrade --install istio-base istio/base \
   --wait
 ```
 
-Verify:
+Verify the Helm release:
 
 ```bash
-helm status istio-base -n istio-system
+helm status istio-base \
+  --namespace istio-system
 ```
 
 Check Istio CRDs:
 
 ```bash
 kubectl get crd | grep istio.io
+```
+
+Verify the Helm release:
+
+```bash
+helm list -n istio-system
 ```
 
 ---
@@ -103,27 +153,43 @@ helm upgrade --install istiod istio/istiod \
   --wait
 ```
 
-The values file enables the Ambient profile.
+The values file contains:
 
-Verify:
-
-```bash
-helm status istiod -n istio-system
+```yaml
+profile: ambient
 ```
 
-```bash
-kubectl get deployment istiod -n istio-system
-```
+Verify the deployment:
 
 ```bash
-kubectl get pods -n istio-system -l app=istiod
+kubectl get deployment istiod \
+  -n istio-system
+```
+
+Verify the pod:
+
+```bash
+kubectl get pods \
+  -n istio-system \
+  -l app=istiod
+```
+
+Check Istiod logs if required:
+
+```bash
+kubectl logs \
+  -n istio-system \
+  -l app=istiod \
+  --tail=100
 ```
 
 ---
 
 # 1.6 Install Istio CNI
 
-Istio CNI configures traffic redirection for workloads enrolled into Ambient Mode.
+Istio CNI is required for Ambient Mode traffic redirection.
+
+Install:
 
 ```bash
 helm upgrade --install istio-cni istio/cni \
@@ -133,28 +199,45 @@ helm upgrade --install istio-cni istio/cni \
   --wait
 ```
 
-Verify:
+Verify the Helm release:
 
 ```bash
-helm status istio-cni -n istio-system
+helm status istio-cni \
+  -n istio-system
 ```
 
+Check the DaemonSet:
+
 ```bash
-kubectl get daemonset -n istio-system
+kubectl get daemonset \
+  -n istio-system
 ```
 
-Check CNI:
+Check CNI pods:
 
 ```bash
-kubectl get pods -n istio-system \
-  -l k8s-app=istio-cni-node
+kubectl get pods \
+  -n istio-system \
+  -l k8s-app=istio-cni-node \
+  -o wide
+```
+
+Check CNI logs:
+
+```bash
+kubectl logs \
+  -n istio-system \
+  -l k8s-app=istio-cni-node \
+  --tail=100
 ```
 
 ---
 
 # 1.7 Install Ztunnel
 
-Ztunnel is the node-level Layer 4 proxy used by Istio Ambient Mode.
+Ztunnel is the Ambient data-plane proxy deployed as a DaemonSet on the Kubernetes nodes.
+
+Install:
 
 ```bash
 helm upgrade --install ztunnel istio/ztunnel \
@@ -167,11 +250,15 @@ helm upgrade --install ztunnel istio/ztunnel \
 Verify:
 
 ```bash
-helm status ztunnel -n istio-system
+helm status ztunnel \
+  -n istio-system
 ```
 
+Check the DaemonSet:
+
 ```bash
-kubectl get daemonset ztunnel -n istio-system
+kubectl get daemonset ztunnel \
+  -n istio-system
 ```
 
 Check ztunnel pods:
@@ -181,75 +268,6 @@ kubectl get pods \
   -n istio-system \
   -l app=ztunnel \
   -o wide
-```
-
----
-
-# 1.8 Verify Installation
-
-Check all Helm releases:
-
-```bash
-helm list -n istio-system
-```
-
-Expected:
-
-```text
-istio-base
-istiod
-istio-cni
-ztunnel
-```
-
-Check pods:
-
-```bash
-kubectl get pods -n istio-system
-```
-
-Check deployments:
-
-```bash
-kubectl get deployments -n istio-system
-```
-
-Check DaemonSets:
-
-```bash
-kubectl get daemonsets -n istio-system
-```
-
----
-
-# 1.9 Istio Validation
-
-Run:
-
-```bash
-istioctl version
-```
-
-Run the cluster precheck:
-
-```bash
-istioctl x precheck
-```
-
-Verify the installation:
-
-```bash
-istioctl verify-install
-```
-
----
-
-# 1.10 Verify Ztunnel
-
-List Ambient workloads:
-
-```bash
-istioctl ztunnel-config workloads
 ```
 
 Check ztunnel logs:
@@ -263,23 +281,189 @@ kubectl logs \
 
 ---
 
-# 1.11 Installation Script
+# 1.8 Verify Istio Helm Releases
 
-The complete installation can be executed through:
+List all Istio Helm releases:
+
+```bash
+helm list \
+  -n istio-system
+```
+
+Expected:
+
+```text
+NAME
+istio-base
+istiod
+istio-cni
+ztunnel
+```
+
+Check each release:
+
+```bash
+helm status istio-base -n istio-system
+helm status istiod -n istio-system
+helm status istio-cni -n istio-system
+helm status ztunnel -n istio-system
+```
+
+---
+
+# 1.9 Verify Istio Pods
+
+```bash
+kubectl get pods \
+  -n istio-system \
+  -o wide
+```
+
+Expected core components:
+
+```text
+istiod-xxxxxxxxxx-xxxxx       Running
+istio-cni-node-xxxxx          Running
+istio-cni-node-xxxxx          Running
+ztunnel-xxxxx                 Running
+ztunnel-xxxxx                 Running
+```
+
+Check for non-running pods:
+
+```bash
+kubectl get pods \
+  -n istio-system \
+  --field-selector=status.phase!=Running
+```
+
+---
+
+# 1.10 Verify Deployments and DaemonSets
+
+Deployments:
+
+```bash
+kubectl get deployments \
+  -n istio-system
+```
+
+DaemonSets:
+
+```bash
+kubectl get daemonsets \
+  -n istio-system
+```
+
+Expected:
+
+```text
+istiod
+istio-cni-node
+ztunnel
+```
+
+---
+
+# 1.11 Verify Istio Installation
+
+Check Istio version:
+
+```bash
+istioctl version
+```
+
+Run the Istio precheck:
+
+```bash
+istioctl x precheck
+```
+
+Verify installation:
+
+```bash
+istioctl verify-install
+```
+
+The installation should complete without critical errors.
+
+---
+
+# 1.12 Verify Ztunnel
+
+Check ztunnel configuration:
+
+```bash
+istioctl ztunnel-config workloads
+```
+
+Check ztunnel endpoints:
+
+```bash
+istioctl ztunnel-config endpoints
+```
+
+Check ztunnel clusters:
+
+```bash
+istioctl ztunnel-config clusters
+```
+
+Check ztunnel listeners:
+
+```bash
+istioctl ztunnel-config listeners
+```
+
+At this stage, there may be no application workloads enrolled in Ambient Mode yet.
+
+That is expected.
+
+Application namespace enrollment happens in **Phase 2**.
+
+---
+
+# 1.13 Run Installation Script
+
+The installation can also be automated using:
 
 ```bash
 ./scripts/install.sh
 ```
 
-Make the script executable:
+If required:
 
 ```bash
 chmod +x scripts/install.sh
 ```
 
+Execute:
+
+```bash
+./scripts/install.sh
+```
+
+The script installs:
+
+```text
+istio-base
+    ↓
+istiod
+    ↓
+istio-cni
+    ↓
+ztunnel
+```
+
 ---
 
-# 1.12 Verification Script
+# 1.14 Run Verification Script
+
+Make the script executable:
+
+```bash
+chmod +x scripts/verify.sh
+```
 
 Run:
 
@@ -289,35 +473,134 @@ Run:
 
 The script validates:
 
-* Kubernetes connectivity
-* Istio Helm releases
-* Istiod
-* Istio CNI
-* Ztunnel
-* Istio precheck
-* Istio installation
-* Ambient workloads
+```text
+Kubernetes connectivity
+        ↓
+Helm releases
+        ↓
+Istiod
+        ↓
+Istio CNI
+        ↓
+Ztunnel
+        ↓
+Istio version
+        ↓
+Istio precheck
+        ↓
+Istio installation
+        ↓
+Ambient workloads
+```
 
 ---
 
-# Installation Order
+# 1.15 Production Verification
 
-```text
-istio-base
-    │
-    ▼
-istiod
-    │
-    ▼
-istio-cni
-    │
-    ▼
-ztunnel
+Verify the complete Istio system:
+
+```bash
+kubectl get pods -n istio-system
 ```
 
-After Phase 1 is complete, proceed to:
+```bash
+kubectl get deployments -n istio-system
+```
+
+```bash
+kubectl get daemonsets -n istio-system
+```
+
+```bash
+helm list -n istio-system
+```
+
+```bash
+istioctl version
+```
+
+```bash
+istioctl x precheck
+```
+
+```bash
+istioctl verify-install
+```
+
+```bash
+istioctl ztunnel-config workloads
+```
+
+---
+
+# Phase 1 Checklist
+
+* [ ] `ISTIO_VERSION` is defined
+* [ ] Istio Helm repository is configured
+* [ ] `istio-system` namespace exists
+* [ ] `istio-base` Helm release is installed
+* [ ] Istio CRDs are installed
+* [ ] `istiod` Helm release is installed
+* [ ] Istiod pod is `Running`
+* [ ] `istio-cni` Helm release is installed
+* [ ] Istio CNI DaemonSet is healthy
+* [ ] Ztunnel Helm release is installed
+* [ ] Ztunnel DaemonSet is healthy
+* [ ] All Istio system pods are `Running`
+* [ ] `istioctl x precheck` passes
+* [ ] `istioctl verify-install` passes
+* [ ] Ztunnel configuration is accessible
+* [ ] No application namespace is enrolled yet
+* [ ] Installation scripts execute successfully
+* [ ] Verification script passes
+
+---
+
+# Phase 1 Architecture
+
+After completing this phase:
+
+```text
+                    Kubernetes Cluster
+                           │
+                           │
+                  ┌────────▼────────┐
+                  │     Istiod      │
+                  │ Control Plane   │
+                  └────────┬────────┘
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+       ┌──────▼──────┐          ┌──────▼──────┐
+       │ Istio CNI   │          │   Ztunnel   │
+       │             │          │  Data Plane │
+       └─────────────┘          └──────┬──────┘
+                                       │
+                              Ambient Workloads
+                              (Phase 2)
+```
+
+---
+
+# Next Phase
+
+Once all Phase 1 checklist items pass, proceed to:
 
 ```text
 Phase 2 — Ambient Namespace Enrollment
+```
+
+Phase 2 will cover:
+
+```text
+Namespace labeling
+        ↓
+Ambient enrollment
+        ↓
+Workload deployment
+        ↓
+Ztunnel workload discovery
+        ↓
+Ambient traffic validation
 ```
 
