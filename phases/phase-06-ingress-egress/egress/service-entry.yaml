@@ -1,0 +1,25 @@
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: payment-provider
+  namespace: payments
+  labels:
+    app.kubernetes.io/name: payment-provider
+    app.kubernetes.io/part-of: bfsi-platform
+    app.kubernetes.io/component: external-dependency
+
+spec:
+  hosts:
+    - api.payment-provider.example
+
+  location: MESH_EXTERNAL
+
+  resolution: DNS
+
+  ports:
+    - number: 443
+      name: tls
+      protocol: TLS
+
+  exportTo:
+    - "."

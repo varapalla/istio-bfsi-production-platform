@@ -1,0 +1,26 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: payments
+  namespace: payments
+  labels:
+    app.kubernetes.io/name: payments-route
+    app.kubernetes.io/part-of: bfsi-platform
+spec:
+  parentRefs:
+    - name: bfsi-ingress
+      namespace: istio-ingress
+
+  hostnames:
+    - payments.bfsi.example.com
+
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /payments
+
+      backendRefs:
+        - name: payments
+          port: 8080
+          weight: 100

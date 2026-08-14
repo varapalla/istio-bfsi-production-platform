@@ -1,0 +1,23 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-egress-authorization
+  namespace: payments
+  labels:
+    app.kubernetes.io/name: payments-egress-authorization
+    app.kubernetes.io/part-of: bfsi-platform
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: payments-egress
+
+  action: ALLOW
+
+  rules:
+    - to:
+        - operation:
+            ports:
+              - "443"
+            hosts:
+              - "api.payment-provider.example"

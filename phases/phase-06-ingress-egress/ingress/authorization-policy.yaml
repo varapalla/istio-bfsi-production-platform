@@ -1,0 +1,21 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: bfsi-ingress-authorization
+  namespace: istio-ingress
+  labels:
+    app.kubernetes.io/name: bfsi-ingress-authorization
+    app.kubernetes.io/part-of: bfsi-platform
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: bfsi-ingress
+
+  action: ALLOW
+
+  rules:
+    - to:
+        - operation:
+            ports:
+              - "443"

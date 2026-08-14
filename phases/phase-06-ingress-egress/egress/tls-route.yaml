@@ -1,0 +1,40 @@
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: payment-provider-to-egress
+  namespace: payments
+  labels:
+    app.kubernetes.io/name: payment-provider-to-egress
+    app.kubernetes.io/part-of: bfsi-platform
+spec:
+  parentRefs:
+    - kind: ServiceEntry
+      group: networking.istio.io
+      name: payment-provider
+
+  rules:
+    - backendRefs:
+        - name: payments-egress-istio
+          port: 443
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: payment-provider-from-egress
+  namespace: payments
+  labels:
+    app.kubernetes.io/name: payment-provider-from-egress
+    app.kubernetes.io/part-of: bfsi-platform
+spec:
+  parentRefs:
+    - name: payments-egress
+
+  hostnames:
+    - api.payment-provider.example
+
+  rules:
+    - backendRefs:
+        - kind: Hostname
+          group: networking.istio.io
+          name: api.payment-provider.example
+          port: 443
