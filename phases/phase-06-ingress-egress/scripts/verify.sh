@@ -2,227 +2,153 @@
 
 set -Eeuo pipefail
 
-ISTIO_NAMESPACE="${ISTIO_NAMESPACE:-istio-system}"
-INGRESS_NAMESPACE="${INGRESS_NAMESPACE:-istio-ingress}"
-EGRESS_NAMESPACE="${EGRESS_NAMESPACE:-payments}"
+INGRESS_NAMESPACE="istio-ingress"
+EGRESS_NAMESPACE="payments"
 
-PASS_COUNT=0
-FAIL_COUNT=0
-
-pass() {
-  printf '[PASS] %s\n' "$1"
-  PASS_COUNT=$((PASS_COUNT + 1))
+log() {
+  echo "==> $*"
 }
 
-fail_check() {
-  printf '[FAIL] %s\n' "$1"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+error() {
+  echo "ERROR: $*" >&2
+  exit 1
 }
 
-check_resource() {
-  local description="$1"
-  local resource="$2"
-  local namespace="$3"
+# ------------------------------------------------------------
+# Prerequisites
+# ------------------------------------------------------------
 
-  if kubectl get "${resource}" -n "${namespace}" >/dev/null 2>&1; then
-    pass "${description}"
-  else
-    fail_check "${description}"
-  fi
-}
+command -v kubectl >/dev/null 2>&1 || \
+  error "kubectl is not installed"
 
-check_crd() {
-  local crd="$1"
+kubectl cluster-info >/dev/null 2>&1 || \
+  error "Unable to connect to Kubernetes cluster"
 
-  if kubectl get crd "${crd}" >/dev/null 2>&1; then
-    pass "Gateway API CRD: ${crd}"
-  else
-    fail_check "Gateway API CRD: ${crd}"
-  fi
-}
+# ------------------------------------------------------------
+# Verify namespaces
+# ------------------------------------------------------------
 
-check_gateway_condition() {
-  local description="$1"
-  local gateway="$2"
-  local namespace="$3"
+log "Verifying ingress namespace"
 
-  local status
+kubectl get namespace "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Namespace '${INGRESS_NAMESPACE}' not found"
 
-  status="$(
-    kubectl get gateway "${gateway}" \
-      -n "${namespace}" \
-      -o jsonpath='{range .status.conditions[?(@.type=="Programmed")]}{.status}{end}' \
-      2>/dev/null || true
-  )"
+log "Verifying application namespace"
 
-  if [[ "${status}" == "True" ]]; then
-    pass "${description}"
-  else
-    fail_check "${description} (Programmed=${status:-Unknown})"
-  fi
-}
+kubectl get namespace "${EGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Namespace '${EGRESS_NAMESPACE}' not found"
 
-check_route_condition() {
-  local description="$1"
-  local resource="$2"
-  local name="$3"
-  local namespace="$4"
+# ------------------------------------------------------------
+# Verify GatewayClass
+# ------------------------------------------------------------
 
-  local status
+log "Verifying Istio GatewayClass"
 
-  status="$(
-    kubectl get "${resource}" "${name}" \
-      -n "${namespace}" \
-      -o jsonpath='{range .status.parents[*].conditions[?(@.type=="Accepted")]}{.status}{end}' \
-      2>/dev/null || true
-  )"
+kubectl get gatewayclass istio >/dev/null 2>&1 || \
+  error "Istio GatewayClass 'istio' not found"
 
-  if [[ "${status}" == "True" ]]; then
-    pass "${description}"
-  else
-    fail_check "${description} (Accepted=${status:-Unknown})"
-  fi
-}
+# ------------------------------------------------------------
+# Verify ingress
+# ------------------------------------------------------------
 
-verify_prerequisites() {
-  if kubectl cluster-info >/dev/null 2>&1; then
-    pass "Kubernetes connectivity"
-  else
-    fail_check "Kubernetes connectivity"
-  fi
+log "Verifying ingress Gateway"
 
-  if kubectl get namespace "${ISTIO_NAMESPACE}" >/dev/null 2>&1; then
-    pass "Istio namespace"
-  else
-    fail_check "Istio namespace"
-  fi
+kubectl get gateway \
+  bfsi-ingress \
+  -n "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Ingress Gateway 'bfsi-ingress' not found"
 
-  if kubectl get gatewayclass istio >/dev/null 2>&1; then
-    pass "Istio GatewayClass"
-  else
-    fail_check "Istio GatewayClass"
-  fi
-}
+log "Verifying ingress HTTPRoute"
 
-verify_gateway_api() {
-  check_crd "gateways.gateway.networking.k8s.io"
-  check_crd "httproutes.gateway.networking.k8s.io"
-  check_crd "tlsroutes.gateway.networking.k8s.io"
-}
+kubectl get httproute \
+  payments \
+  -n "${EGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "HTTPRoute 'payments' not found"
 
-verify_ingress() {
-  check_resource \
-    "Ingress namespace" \
-    "namespace/istio-ingress" \
-    "default"
+log "Verifying ingress AuthorizationPolicy"
 
-  check_resource \
-    "Ingress Gateway" \
-    "gateway/bfsi-ingress" \
-    "${INGRESS_NAMESPACE}"
+kubectl get authorizationpolicy \
+  bfsi-ingress-authorization \
+  -n "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Ingress AuthorizationPolicy not found"
 
-  check_gateway_condition \
-    "Ingress Gateway programmed" \
-    "bfsi-ingress" \
-    "${INGRESS_NAMESPACE}"
+# ------------------------------------------------------------
+# Verify egress
+# ------------------------------------------------------------
 
-  check_resource \
-    "Ingress HTTPRoute" \
-    "httproute/payments" \
-    "${EGRESS_NAMESPACE}"
+log "Verifying egress Gateway"
 
-  check_route_condition \
-    "Ingress HTTPRoute accepted" \
-    "httproute" \
-    "payments" \
-    "${EGRESS_NAMESPACE}"
+kubectl get gateway \
+  payments-egress \
+  -n "${EGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Egress Gateway 'payments-egress' not found"
 
-  check_resource \
-    "Ingress AuthorizationPolicy" \
-    "authorizationpolicy/bfsi-ingress-authorization" \
-    "${INGRESS_NAMESPACE}"
-}
+log "Verifying ServiceEntry"
 
-verify_egress() {
-  check_resource \
-    "Egress Gateway" \
-    "gateway/payments-egress" \
-    "${EGRESS_NAMESPACE}"
+kubectl get serviceentry \
+  payment-provider \
+  -n "${EGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "ServiceEntry 'payment-provider' not found"
 
-  check_gateway_condition \
-    "Egress Gateway programmed" \
-    "payments-egress" \
-    "${EGRESS_NAMESPACE}"
+log "Verifying TLSRoute"
 
-  check_resource \
-    "Payment Provider ServiceEntry" \
-    "serviceentry/payment-provider" \
-    "${EGRESS_NAMESPACE}"
+kubectl get tlsroute \
+  payment-provider-to-egress \
+  -n "${EGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "TLSRoute 'payment-provider-to-egress' not found"
 
-  check_resource \
-    "Egress TLSRoute" \
-    "tlsroute/payment-provider-to-egress" \
-    "${EGRESS_NAMESPACE}"
+log "Verifying egress AuthorizationPolicy"
 
-  check_resource \
-    "Egress AuthorizationPolicy" \
-    "authorizationpolicy/payments-egress-authorization" \
-    "${EGRESS_NAMESPACE}"
-}
+kubectl get authorizationpolicy \
+  payments-egress-authorization \
+  -n "${EGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Egress AuthorizationPolicy not found"
 
-verify_workloads() {
-  if kubectl get pods \
-    -n "${INGRESS_NAMESPACE}" \
-    -l gateway.networking.k8s.io/gateway-name=bfsi-ingress \
-    --field-selector=status.phase=Running \
-    -o name 2>/dev/null | grep -q .; then
+# ------------------------------------------------------------
+# Display deployed resources
+# ------------------------------------------------------------
 
-    pass "Ingress Gateway workload running"
-  else
-    fail_check "Ingress Gateway workload running"
-  fi
+echo
+log "Ingress Gateway"
 
-  if kubectl get pods \
-    -n "${EGRESS_NAMESPACE}" \
-    -l gateway.networking.k8s.io/gateway-name=payments-egress \
-    --field-selector=status.phase=Running \
-    -o name 2>/dev/null | grep -q .; then
+kubectl get gateway \
+  -n "${INGRESS_NAMESPACE}"
 
-    pass "Egress Gateway workload running"
-  else
-    fail_check "Egress Gateway workload running"
-  fi
-}
+echo
+log "HTTPRoutes"
 
-print_summary() {
-  echo
-  echo "=========================================="
-  echo "Phase 6 Verification Summary"
-  echo "=========================================="
-  echo "Passed : ${PASS_COUNT}"
-  echo "Failed : ${FAIL_COUNT}"
-  echo "=========================================="
+kubectl get httproute \
+  -n "${EGRESS_NAMESPACE}"
 
-  if [[ "${FAIL_COUNT}" -gt 0 ]]; then
-    echo "Phase 6 Verification FAILED"
-    exit 1
-  fi
+echo
+log "Ingress AuthorizationPolicies"
 
-  echo "Phase 6 Verification PASSED"
-}
+kubectl get authorizationpolicy \
+  -n "${INGRESS_NAMESPACE}"
 
-main() {
-  echo "=========================================="
-  echo "Phase 6 - Ingress & Egress Verification"
-  echo "=========================================="
+echo
+log "Egress Gateway"
 
-  verify_prerequisites
-  verify_gateway_api
-  verify_ingress
-  verify_egress
-  verify_workloads
+kubectl get gateway \
+  -n "${EGRESS_NAMESPACE}"
 
-  print_summary
-}
+echo
+log "ServiceEntries"
 
-main "$@"
+kubectl get serviceentry \
+  -n "${EGRESS_NAMESPACE}"
+
+echo
+log "TLSRoutes"
+
+kubectl get tlsroute \
+  -n "${EGRESS_NAMESPACE}"
+
+echo
+log "Egress AuthorizationPolicies"
+
+kubectl get authorizationpolicy \
+  -n "${EGRESS_NAMESPACE}"
+
+echo
+log "Phase 6 verification completed successfully"

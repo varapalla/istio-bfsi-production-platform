@@ -5,194 +5,119 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PHASE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-ISTIO_NAMESPACE="${ISTIO_NAMESPACE:-istio-system}"
-INGRESS_NAMESPACE="${INGRESS_NAMESPACE:-istio-ingress}"
-EGRESS_NAMESPACE="${EGRESS_NAMESPACE:-payments}"
-
 INGRESS_DIR="${PHASE_DIR}/ingress"
 EGRESS_DIR="${PHASE_DIR}/egress"
 
+INGRESS_NAMESPACE="istio-ingress"
+EGRESS_NAMESPACE="payments"
+
 log() {
-  printf '[INFO] %s\n' "$*"
+  echo "==> $*"
 }
 
 error() {
-  printf '[ERROR] %s\n' "$*" >&2
-}
-
-fail() {
-  error "$*"
+  echo "ERROR: $*" >&2
   exit 1
 }
 
-require_command() {
-  command -v "$1" >/dev/null 2>&1 \
-    || fail "Required command not found: $1"
-}
+# ------------------------------------------------------------
+# Prerequisites
+# ------------------------------------------------------------
 
-check_prerequisites() {
-  log "Checking prerequisites..."
+command -v kubectl >/dev/null 2>&1 || \
+  error "kubectl is not installed"
 
-  require_command kubectl
-  require_command helm
-  require_command istioctl
+kubectl cluster-info >/dev/null 2>&1 || \
+  error "Unable to connect to Kubernetes cluster"
 
-  kubectl cluster-info >/dev/null 2>&1 \
-    || fail "Unable to connect to Kubernetes cluster"
+# ------------------------------------------------------------
+# Verify required namespaces
+# ------------------------------------------------------------
 
-  kubectl get namespace "${ISTIO_NAMESPACE}" >/dev/null 2>&1 \
-    || fail "Istio namespace '${ISTIO_NAMESPACE}' not found"
+log "Verifying application namespace: ${EGRESS_NAMESPACE}"
 
-  kubectl get gatewayclass istio >/dev/null 2>&1 \
-    || fail "Istio GatewayClass 'istio' not found"
+kubectl get namespace "${EGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Required namespace '${EGRESS_NAMESPACE}' does not exist"
 
-  kubectl get namespace "${EGRESS_NAMESPACE}" >/dev/null 2>&1 \
-    || fail "Application namespace '${EGRESS_NAMESPACE}' not found"
+# ------------------------------------------------------------
+# Deploy ingress namespace
+# ------------------------------------------------------------
 
-  log "Prerequisites validated."
-}
+log "Deploying ingress namespace"
 
-check_gateway_api() {
-  log "Checking Gateway API CRDs..."
+kubectl apply \
+  -f "${INGRESS_DIR}/namespace.yaml"
 
-  local crd
+kubectl get namespace "${INGRESS_NAMESPACE}" >/dev/null 2>&1 || \
+  error "Namespace '${INGRESS_NAMESPACE}' was not created"
 
-  for crd in \
-    gateways.gateway.networking.k8s.io \
-    httproutes.gateway.networking.k8s.io \
-    tlsroutes.gateway.networking.k8s.io
-  do
-    kubectl get crd "${crd}" >/dev/null 2>&1 \
-      || fail "Gateway API CRD missing: ${crd}"
-  done
+# ------------------------------------------------------------
+# Deploy ingress
+# ------------------------------------------------------------
 
-  log "Gateway API CRDs validated."
-}
+log "Deploying ingress Gateway"
 
-create_ingress_namespace() {
-  log "Creating ingress namespace..."
+kubectl apply \
+  -f "${INGRESS_DIR}/gateway.yaml"
 
-  kubectl apply \
-    -f "${INGRESS_DIR}/namespace.yaml"
+log "Deploying ingress HTTPRoute"
 
-  kubectl wait \
-    --for=jsonpath='{.status.phase}'=Active \
-    "namespace/${INGRESS_NAMESPACE}" \
-    --timeout=60s
+kubectl apply \
+  -f "${INGRESS_DIR}/http-route.yaml"
 
-  log "Namespace '${INGRESS_NAMESPACE}' is Active."
-}
+log "Deploying ingress AuthorizationPolicy"
 
-validate_ingress_manifests() {
-  log "Validating ingress manifests..."
+kubectl apply \
+  -f "${INGRESS_DIR}/authorization-policy.yaml"
 
-  kubectl apply \
-    --dry-run=server \
-    -f "${INGRESS_DIR}/gateway.yaml"
+# ------------------------------------------------------------
+# Deploy egress
+# ------------------------------------------------------------
 
-  kubectl apply \
-    --dry-run=server \
-    -f "${INGRESS_DIR}/http-route.yaml"
+log "Deploying egress Gateway"
 
-  kubectl apply \
-    --dry-run=server \
-    -f "${INGRESS_DIR}/authorization-policy.yaml"
+kubectl apply \
+  -f "${EGRESS_DIR}/gateway.yaml"
 
-  log "Ingress manifests validated."
-}
+log "Deploying egress ServiceEntry"
 
-validate_egress_manifests() {
-  log "Validating egress manifests..."
+kubectl apply \
+  -f "${EGRESS_DIR}/service-entry.yaml"
 
-  kubectl apply \
-    --dry-run=server \
-    -f "${EGRESS_DIR}/gateway.yaml"
+log "Deploying egress TLSRoute"
 
-  kubectl apply \
-    --dry-run=server \
-    -f "${EGRESS_DIR}/service-entry.yaml"
+kubectl apply \
+  -f "${EGRESS_DIR}/tls-route.yaml"
 
-  kubectl apply \
-    --dry-run=server \
-    -f "${EGRESS_DIR}/tls-route.yaml"
+log "Deploying egress AuthorizationPolicy"
 
-  kubectl apply \
-    --dry-run=server \
-    -f "${EGRESS_DIR}/authorization-policy.yaml"
+kubectl apply \
+  -f "${EGRESS_DIR}/authorization-policy.yaml"
 
-  log "Egress manifests validated."
-}
+# ------------------------------------------------------------
+# Summary
+# ------------------------------------------------------------
 
-deploy_ingress() {
-  log "Deploying ingress Gateway..."
+echo
+log "Ingress resources"
 
-  kubectl apply \
-    -f "${INGRESS_DIR}/gateway.yaml"
+kubectl get gateway \
+  -n "${INGRESS_NAMESPACE}"
 
-  log "Deploying ingress HTTPRoute..."
+kubectl get httproute \
+  -n "${EGRESS_NAMESPACE}"
 
-  kubectl apply \
-    -f "${INGRESS_DIR}/http-route.yaml"
+echo
+log "Egress resources"
 
-  log "Deploying ingress AuthorizationPolicy..."
+kubectl get gateway \
+  -n "${EGRESS_NAMESPACE}"
 
-  kubectl apply \
-    -f "${INGRESS_DIR}/authorization-policy.yaml"
+kubectl get serviceentry \
+  -n "${EGRESS_NAMESPACE}"
 
-  log "Ingress deployment completed."
-}
+kubectl get tlsroute \
+  -n "${EGRESS_NAMESPACE}"
 
-deploy_egress() {
-  log "Deploying egress Gateway..."
-
-  kubectl apply \
-    -f "${EGRESS_DIR}/gateway.yaml"
-
-  log "Deploying ServiceEntry..."
-
-  kubectl apply \
-    -f "${EGRESS_DIR}/service-entry.yaml"
-
-  log "Deploying TLSRoute..."
-
-  kubectl apply \
-    -f "${EGRESS_DIR}/tls-route.yaml"
-
-  log "Deploying egress AuthorizationPolicy..."
-
-  kubectl apply \
-    -f "${EGRESS_DIR}/authorization-policy.yaml"
-
-  log "Egress deployment completed."
-}
-
-main() {
-  log "=========================================="
-  log "Phase 6 - Ingress & Egress Deployment"
-  log "=========================================="
-
-  # 1. Validate cluster and Istio prerequisites
-  check_prerequisites
-
-  # 2. Validate Gateway API
-  check_gateway_api
-
-  # 3. Namespace MUST exist before server-side validation
-  create_ingress_namespace
-
-  # 4. Now server-side validation can safely happen
-  validate_ingress_manifests
-  validate_egress_manifests
-
-  # 5. Deploy resources
-  deploy_ingress
-  deploy_egress
-
-  log "=========================================="
-  log "Phase 6 Deployment Completed"
-  log "=========================================="
-
-  log "Run './scripts/verify.sh' to validate the deployment."
-}
-
-main "$@"
+echo
+log "Phase 6 deployment completed successfully"
