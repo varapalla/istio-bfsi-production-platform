@@ -14,10 +14,6 @@ echo "Istio Version : ${ISTIO_VERSION}"
 echo "Namespace     : ${ISTIO_NAMESPACE}"
 echo "=========================================="
 
-# --------------------------------------------------
-# Phase 0 validation
-# --------------------------------------------------
-
 echo
 echo "==> Checking prerequisites"
 
@@ -35,32 +31,20 @@ kubectl cluster-info >/dev/null
 
 echo "Prerequisites validated."
 
-# --------------------------------------------------
-# Istio Helm repository
-# --------------------------------------------------
-
 echo
 echo "==> Configuring Istio Helm repository"
 
-if ! helm repo list 2>/dev/null | awk '{print $1}' | grep -qx "istio"; then
+if ! helm repo list 2>/dev/null | awk 'NR > 1 {print $1}' | grep -qx "istio"; then
   helm repo add istio "${ISTIO_HELM_REPO}"
 fi
 
 helm repo update
-
-# --------------------------------------------------
-# Istio namespace
-# --------------------------------------------------
 
 echo
 echo "==> Creating Istio namespace"
 
 kubectl get namespace "${ISTIO_NAMESPACE}" >/dev/null 2>&1 || \
   kubectl create namespace "${ISTIO_NAMESPACE}"
-
-# --------------------------------------------------
-# Istio Base
-# --------------------------------------------------
 
 echo
 echo "==> Installing Istio Base"
@@ -69,10 +53,6 @@ helm upgrade --install istio-base istio/base \
   --namespace "${ISTIO_NAMESPACE}" \
   --version "${ISTIO_VERSION}" \
   --wait
-
-# --------------------------------------------------
-# Istiod
-# --------------------------------------------------
 
 echo
 echo "==> Installing Istiod"
@@ -83,10 +63,6 @@ helm upgrade --install istiod istio/istiod \
   --values values/istiod-values.yaml \
   --wait
 
-# --------------------------------------------------
-# Istio CNI
-# --------------------------------------------------
-
 echo
 echo "==> Installing Istio CNI"
 
@@ -96,10 +72,6 @@ helm upgrade --install istio-cni istio/cni \
   --values values/cni-values.yaml \
   --wait
 
-# --------------------------------------------------
-# Ztunnel
-# --------------------------------------------------
-
 echo
 echo "==> Installing Ztunnel"
 
@@ -108,10 +80,6 @@ helm upgrade --install ztunnel istio/ztunnel \
   --version "${ISTIO_VERSION}" \
   --values values/ztunnel-values.yaml \
   --wait
-
-# --------------------------------------------------
-# Final status
-# --------------------------------------------------
 
 echo
 echo "=========================================="
@@ -129,4 +97,4 @@ echo "==> Istio workloads"
 
 kubectl get pods \
   --namespace "${ISTIO_NAMESPACE}" \
-  --wide
+  -o wide
