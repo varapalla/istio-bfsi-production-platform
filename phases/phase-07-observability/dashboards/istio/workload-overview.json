@@ -1,0 +1,127 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Inbound Request Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_requests_total{destination_workload=~\"$workload\",destination_workload_namespace=~\"$namespace\"}[5m]))",
+          "legendFormat": "Inbound"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "title": "Outbound Request Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_requests_total{source_workload=~\"$workload\",source_workload_namespace=~\"$namespace\"}[5m]))",
+          "legendFormat": "Outbound"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "title": "mTLS Traffic",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_requests_total{destination_workload=~\"$workload\",connection_security_policy=\"mutual_tls\"}[5m]))",
+          "legendFormat": "mTLS"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "title": "5xx Responses",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_requests_total{destination_workload=~\"$workload\",destination_workload_namespace=~\"$namespace\",response_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(istio_requests_total,destination_workload_namespace)",
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "workload",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(istio_requests_total{destination_workload_namespace=~\"$namespace\"},destination_workload)",
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "BFSI - Istio Workload Overview",
+  "uid": "bfsi-istio-workload",
+  "version": 1
+}

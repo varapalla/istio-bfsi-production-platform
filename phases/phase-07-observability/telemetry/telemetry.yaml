@@ -1,0 +1,28 @@
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-default
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/part-of: istio-bfsi-platform
+    app.kubernetes.io/component: telemetry
+spec:
+  metrics:
+    - providers:
+        - name: prometheus
+      overrides:
+        - match:
+            metric: ALL_METRICS
+          tagOverrides:
+            source_workload:
+              value: "source.workload"
+            source_workload_namespace:
+              value: "source.workload_namespace"
+            destination_service:
+              value: "destination.service"
+            destination_service_name:
+              value: "destination.service.name"
+            destination_service_namespace:
+              value: "destination.service.namespace"
+            response_code:
+              value: "response.code"

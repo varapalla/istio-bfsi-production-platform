@@ -1,0 +1,12 @@
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-access-logging
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/part-of: istio-bfsi-platform
+    app.kubernetes.io/component: access-logging
+spec:
+  accessLogging:
+    - providers:
+        - name: envoy

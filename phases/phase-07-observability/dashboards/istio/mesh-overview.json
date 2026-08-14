@@ -1,0 +1,140 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Mesh Request Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_requests_total[5m]))",
+          "legendFormat": "Requests/sec"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "title": "Mesh Error Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "100 * sum(rate(istio_requests_total{response_code=~\"5..\"}[5m])) / clamp_min(sum(rate(istio_requests_total[5m])), 1)",
+          "legendFormat": "5xx %"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "title": "P95 Request Latency",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(istio_request_duration_milliseconds_bucket[5m])))",
+          "legendFormat": "P95"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "title": "Requests by Response Code",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (response_code) (rate(istio_requests_total[5m]))",
+          "legendFormat": "{{response_code}}"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "title": "Requests by Destination Service",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (destination_service_name) (rate(istio_requests_total[5m]))",
+          "legendFormat": "{{destination_service_name}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "BFSI - Istio Mesh Overview",
+  "uid": "bfsi-istio-mesh",
+  "version": 1
+}

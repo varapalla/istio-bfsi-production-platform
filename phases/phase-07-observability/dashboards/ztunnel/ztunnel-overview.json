@@ -1,0 +1,104 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Open TCP Connections",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(istio_tcp_connections_opened_total)",
+          "legendFormat": "Connections Opened"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "title": "TCP Connection Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_tcp_connections_opened_total[5m]))",
+          "legendFormat": "Connections/sec"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "title": "TCP Bytes Sent",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_tcp_sent_bytes_total[5m]))",
+          "legendFormat": "Bytes/sec"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "title": "TCP Bytes Received",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_tcp_received_bytes_total[5m]))",
+          "legendFormat": "Bytes/sec"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "BFSI - Ztunnel Overview",
+  "uid": "bfsi-ztunnel",
+  "version": 1
+}
