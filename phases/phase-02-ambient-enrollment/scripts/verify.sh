@@ -9,6 +9,8 @@ NAMESPACES=(
   "customers"
 )
 
+ISTIO_NAMESPACE="${ISTIO_NAMESPACE:-istio-system}"
+
 echo "=========================================="
 echo "Istio Ambient Namespace Verification"
 echo "=========================================="
@@ -33,6 +35,7 @@ echo
 echo "==> Verifying Ambient namespaces"
 
 for namespace in "${NAMESPACES[@]}"; do
+
   echo
   echo "Checking: ${namespace}"
 
@@ -53,6 +56,7 @@ for namespace in "${NAMESPACES[@]}"; do
   fi
 
   echo "Ambient Mode: enabled"
+
 done
 
 # --------------------------------------------------
@@ -63,28 +67,32 @@ echo
 echo "==> Verifying Ztunnel"
 
 kubectl get daemonset \
-  -n istio-system \
+  -n "${ISTIO_NAMESPACE}" \
   ztunnel
 
+echo
+echo "==> Ztunnel Pods"
+
 kubectl get pods \
-  -n istio-system \
+  -n "${ISTIO_NAMESPACE}" \
   -l app=ztunnel \
   -o wide
 
 # --------------------------------------------------
-# Ambient workload verification
+# Ztunnel workload configuration
 # --------------------------------------------------
 
 echo
 echo "==> Ztunnel Ambient workloads"
 
-istioctl ztunnel-config workloads
+istioctl ztunnel-config workload
 
 # --------------------------------------------------
-# Namespace workload discovery
+# Application workload verification
 # --------------------------------------------------
 
 for namespace in "${NAMESPACES[@]}"; do
+
   echo
   echo "==> Checking workloads for: ${namespace}"
 
@@ -96,24 +104,19 @@ for namespace in "${NAMESPACES[@]}"; do
       -n "${namespace}" \
       -o wide
 
-    if istioctl ztunnel-config workloads | grep -q "${namespace}"; then
+    if istioctl ztunnel-config workload | grep -q "${namespace}"; then
       echo "Ztunnel workload detected: ${namespace}"
     else
-      echo "WARNING: No workload currently detected by Ztunnel in ${namespace}."
+      echo "WARNING: Workloads exist but are not currently detected by Ztunnel."
     fi
+
   else
+
     echo "No workloads currently deployed in ${namespace}."
+
   fi
+
 done
-
-# --------------------------------------------------
-# Endpoint verification
-# --------------------------------------------------
-
-echo
-echo "==> Ztunnel endpoints"
-
-istioctl ztunnel-config endpoints
 
 echo
 echo "=========================================="
