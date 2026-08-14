@@ -96,6 +96,7 @@ command -v istioctl >/dev/null 2>&1 || {
 }
 
 istioctl waypoint list -A
+istioctl waypoint status -A
 
 echo
 echo "=========================================="
