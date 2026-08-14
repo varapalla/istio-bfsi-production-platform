@@ -1,0 +1,22 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: payments-authorization
+  namespace: payments
+  labels:
+    app.kubernetes.io/part-of: istio-bfsi-production-platform
+    app.kubernetes.io/component: security
+spec:
+  selector:
+    matchLabels:
+      app: payments
+
+  action: ALLOW
+
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - orders
+              - cart
+              - istio-ingress

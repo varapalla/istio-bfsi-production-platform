@@ -1,0 +1,10 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: bfsi-critical
+  labels:
+    app.kubernetes.io/part-of: istio-bfsi-production-platform
+    app.kubernetes.io/component: resilience
+value: 100000
+globalDefault: false
+description: "Priority class for critical BFSI workloads"

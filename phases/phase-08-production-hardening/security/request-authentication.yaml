@@ -1,0 +1,15 @@
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: payments-jwt
+  namespace: payments
+  labels:
+    app.kubernetes.io/part-of: istio-bfsi-production-platform
+    app.kubernetes.io/component: security
+spec:
+  selector:
+    matchLabels:
+      app: payments
+
+  jwtRules:
+    - issuer: "${JWT_ISSUER}"
