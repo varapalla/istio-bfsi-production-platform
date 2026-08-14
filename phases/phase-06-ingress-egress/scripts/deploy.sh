@@ -46,6 +46,9 @@ check_prerequisites() {
   kubectl get gatewayclass istio >/dev/null 2>&1 \
     || fail "Istio GatewayClass 'istio' not found"
 
+  kubectl get namespace "${EGRESS_NAMESPACE}" >/dev/null 2>&1 \
+    || fail "Application namespace '${EGRESS_NAMESPACE}' not found"
+
   log "Prerequisites validated."
 }
 
@@ -66,12 +69,22 @@ check_gateway_api() {
   log "Gateway API CRDs validated."
 }
 
-validate_manifests() {
-  log "Validating Phase 6 manifests..."
+create_ingress_namespace() {
+  log "Creating ingress namespace..."
 
   kubectl apply \
-    --dry-run=server \
     -f "${INGRESS_DIR}/namespace.yaml"
+
+  kubectl wait \
+    --for=jsonpath='{.status.phase}'=Active \
+    "namespace/${INGRESS_NAMESPACE}" \
+    --timeout=60s
+
+  log "Namespace '${INGRESS_NAMESPACE}' is Active."
+}
+
+validate_ingress_manifests() {
+  log "Validating ingress manifests..."
 
   kubectl apply \
     --dry-run=server \
@@ -84,6 +97,12 @@ validate_manifests() {
   kubectl apply \
     --dry-run=server \
     -f "${INGRESS_DIR}/authorization-policy.yaml"
+
+  log "Ingress manifests validated."
+}
+
+validate_egress_manifests() {
+  log "Validating egress manifests..."
 
   kubectl apply \
     --dry-run=server \
@@ -101,22 +120,10 @@ validate_manifests() {
     --dry-run=server \
     -f "${EGRESS_DIR}/authorization-policy.yaml"
 
-  log "Manifest validation completed."
+  log "Egress manifests validated."
 }
 
 deploy_ingress() {
-  log "Deploying ingress namespace..."
-
-  kubectl apply \
-    -f "${INGRESS_DIR}/namespace.yaml"
-
-  kubectl wait \
-    --for=jsonpath='{.status.phase}'=Active \
-    "namespace/${INGRESS_NAMESPACE}" \
-    --timeout=60s
-
-  log "Ingress namespace '${INGRESS_NAMESPACE}' is Active."
-
   log "Deploying ingress Gateway..."
 
   kubectl apply \
@@ -137,9 +144,6 @@ deploy_ingress() {
 
 deploy_egress() {
   log "Deploying egress Gateway..."
-
-  kubectl get namespace "${EGRESS_NAMESPACE}" >/dev/null 2>&1 \
-    || fail "Egress namespace '${EGRESS_NAMESPACE}' not found"
 
   kubectl apply \
     -f "${EGRESS_DIR}/gateway.yaml"
@@ -167,10 +171,20 @@ main() {
   log "Phase 6 - Ingress & Egress Deployment"
   log "=========================================="
 
+  # 1. Validate cluster and Istio prerequisites
   check_prerequisites
-  check_gateway_api
-  validate_manifests
 
+  # 2. Validate Gateway API
+  check_gateway_api
+
+  # 3. Namespace MUST exist before server-side validation
+  create_ingress_namespace
+
+  # 4. Now server-side validation can safely happen
+  validate_ingress_manifests
+  validate_egress_manifests
+
+  # 5. Deploy resources
   deploy_ingress
   deploy_egress
 
@@ -178,7 +192,7 @@ main() {
   log "Phase 6 Deployment Completed"
   log "=========================================="
 
-  log "Run './scripts/verify.sh' to validate."
+  log "Run './scripts/verify.sh' to validate the deployment."
 }
 
 main "$@"
