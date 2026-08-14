@@ -95,7 +95,7 @@ command -v istioctl >/dev/null 2>&1 || {
   exit 1
 }
 
-istioctl waypoint list --all
+istioctl waypoint list -A
 
 echo
 echo "=========================================="
