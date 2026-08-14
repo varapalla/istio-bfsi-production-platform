@@ -26,7 +26,8 @@ fail() {
 }
 
 require_command() {
-  command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+  command -v "$1" >/dev/null 2>&1 \
+    || fail "Required command not found: $1"
 }
 
 check_prerequisites() {
@@ -40,10 +41,10 @@ check_prerequisites() {
     || fail "Unable to connect to Kubernetes cluster"
 
   kubectl get namespace "${ISTIO_NAMESPACE}" >/dev/null 2>&1 \
-    || fail "Istio namespace '${ISTIO_NAMESPACE}' does not exist"
+    || fail "Istio namespace '${ISTIO_NAMESPACE}' not found"
 
   kubectl get gatewayclass istio >/dev/null 2>&1 \
-    || fail "Istio GatewayClass 'istio' does not exist"
+    || fail "Istio GatewayClass 'istio' not found"
 
   log "Prerequisites validated."
 }
@@ -104,16 +105,29 @@ validate_manifests() {
 }
 
 deploy_ingress() {
-  log "Deploying ingress..."
+  log "Deploying ingress namespace..."
 
   kubectl apply \
     -f "${INGRESS_DIR}/namespace.yaml"
 
+  kubectl wait \
+    --for=jsonpath='{.status.phase}'=Active \
+    "namespace/${INGRESS_NAMESPACE}" \
+    --timeout=60s
+
+  log "Ingress namespace '${INGRESS_NAMESPACE}' is Active."
+
+  log "Deploying ingress Gateway..."
+
   kubectl apply \
     -f "${INGRESS_DIR}/gateway.yaml"
 
+  log "Deploying ingress HTTPRoute..."
+
   kubectl apply \
     -f "${INGRESS_DIR}/http-route.yaml"
+
+  log "Deploying ingress AuthorizationPolicy..."
 
   kubectl apply \
     -f "${INGRESS_DIR}/authorization-policy.yaml"
@@ -122,16 +136,25 @@ deploy_ingress() {
 }
 
 deploy_egress() {
-  log "Deploying egress..."
+  log "Deploying egress Gateway..."
+
+  kubectl get namespace "${EGRESS_NAMESPACE}" >/dev/null 2>&1 \
+    || fail "Egress namespace '${EGRESS_NAMESPACE}' not found"
 
   kubectl apply \
     -f "${EGRESS_DIR}/gateway.yaml"
 
+  log "Deploying ServiceEntry..."
+
   kubectl apply \
     -f "${EGRESS_DIR}/service-entry.yaml"
 
+  log "Deploying TLSRoute..."
+
   kubectl apply \
     -f "${EGRESS_DIR}/tls-route.yaml"
+
+  log "Deploying egress AuthorizationPolicy..."
 
   kubectl apply \
     -f "${EGRESS_DIR}/authorization-policy.yaml"
@@ -155,7 +178,7 @@ main() {
   log "Phase 6 Deployment Completed"
   log "=========================================="
 
-  log "Run './scripts/verify.sh' to validate the deployment."
+  log "Run './scripts/verify.sh' to validate."
 }
 
 main "$@"

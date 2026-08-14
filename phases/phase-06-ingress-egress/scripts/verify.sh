@@ -2,9 +2,6 @@
 
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PHASE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-
 ISTIO_NAMESPACE="${ISTIO_NAMESPACE:-istio-system}"
 INGRESS_NAMESPACE="${INGRESS_NAMESPACE:-istio-ingress}"
 EGRESS_NAMESPACE="${EGRESS_NAMESPACE:-payments}"
@@ -44,21 +41,46 @@ check_crd() {
   fi
 }
 
-check_condition() {
+check_gateway_condition() {
   local description="$1"
-  local resource="$2"
+  local gateway="$2"
   local namespace="$3"
-  local condition="$4"
 
-  if kubectl wait \
-    --for="condition=${condition}" \
-    "${resource}" \
-    -n "${namespace}" \
-    --timeout=30s >/dev/null 2>&1; then
+  local status
 
+  status="$(
+    kubectl get gateway "${gateway}" \
+      -n "${namespace}" \
+      -o jsonpath='{range .status.conditions[?(@.type=="Programmed")]}{.status}{end}' \
+      2>/dev/null || true
+  )"
+
+  if [[ "${status}" == "True" ]]; then
     pass "${description}"
   else
-    fail_check "${description}"
+    fail_check "${description} (Programmed=${status:-Unknown})"
+  fi
+}
+
+check_route_condition() {
+  local description="$1"
+  local resource="$2"
+  local name="$3"
+  local namespace="$4"
+
+  local status
+
+  status="$(
+    kubectl get "${resource}" "${name}" \
+      -n "${namespace}" \
+      -o jsonpath='{range .status.parents[*].conditions[?(@.type=="Accepted")]}{.status}{end}' \
+      2>/dev/null || true
+  )"
+
+  if [[ "${status}" == "True" ]]; then
+    pass "${description}"
+  else
+    fail_check "${description} (Accepted=${status:-Unknown})"
   fi
 }
 
@@ -99,27 +121,37 @@ verify_ingress() {
     "gateway/bfsi-ingress" \
     "${INGRESS_NAMESPACE}"
 
+  check_gateway_condition \
+    "Ingress Gateway programmed" \
+    "bfsi-ingress" \
+    "${INGRESS_NAMESPACE}"
+
   check_resource \
     "Ingress HTTPRoute" \
     "httproute/payments" \
+    "${EGRESS_NAMESPACE}"
+
+  check_route_condition \
+    "Ingress HTTPRoute accepted" \
+    "httproute" \
+    "payments" \
     "${EGRESS_NAMESPACE}"
 
   check_resource \
     "Ingress AuthorizationPolicy" \
     "authorizationpolicy/bfsi-ingress-authorization" \
     "${INGRESS_NAMESPACE}"
-
-  check_condition \
-    "Ingress Gateway programmed" \
-    "gateway/bfsi-ingress" \
-    "${INGRESS_NAMESPACE}" \
-    "Programmed"
 }
 
 verify_egress() {
   check_resource \
     "Egress Gateway" \
     "gateway/payments-egress" \
+    "${EGRESS_NAMESPACE}"
+
+  check_gateway_condition \
+    "Egress Gateway programmed" \
+    "payments-egress" \
     "${EGRESS_NAMESPACE}"
 
   check_resource \
@@ -136,12 +168,6 @@ verify_egress() {
     "Egress AuthorizationPolicy" \
     "authorizationpolicy/payments-egress-authorization" \
     "${EGRESS_NAMESPACE}"
-
-  check_condition \
-    "Egress Gateway programmed" \
-    "gateway/payments-egress" \
-    "${EGRESS_NAMESPACE}" \
-    "Programmed"
 }
 
 verify_workloads() {
@@ -195,6 +221,7 @@ main() {
   verify_ingress
   verify_egress
   verify_workloads
+
   print_summary
 }
 
